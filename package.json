@@ -4,7 +4,8 @@
   "description": "GitHub Action for Reglint compliance scanning - checks code for GDPR, CCPA, and HIPAA violations",
   "main": "index.js",
   "scripts": {
-    "test": "node test.js"
+    "test": "node test.js",
+    "build": "ncc build index.js -o dist"
   },
   "keywords": [
     "github-action",
@@ -22,5 +23,8 @@
     "@actions/core": "^1.10.1",
     "@actions/github": "^6.0.0",
     "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.38.1"
   }
 }
