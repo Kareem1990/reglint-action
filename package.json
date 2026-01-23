@@ -1,0 +1,26 @@
+{
+  "name": "reglint-action",
+  "version": "1.0.0",
+  "description": "GitHub Action for Reglint compliance scanning - checks code for GDPR, CCPA, and HIPAA violations",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [
+    "github-action",
+    "compliance",
+    "gdpr",
+    "ccpa",
+    "hipaa",
+    "security",
+    "scanning",
+    "ci-cd"
+  ],
+  "author": "Reglint",
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^1.10.1",
+    "@actions/github": "^6.0.0",
+    "node-fetch": "^2.7.0"
+  }
+}

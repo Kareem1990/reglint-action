@@ -1,0 +1,64 @@
+name: 'Reglint Compliance Scanner'
+description: 'Scan code for GDPR, CCPA, and HIPAA compliance violations in CI/CD pipelines'
+author: 'Reglint'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  api-key:
+    description: 'Reglint API key for Lambda authentication'
+    required: true
+
+  frameworks:
+    description: 'Comma-separated compliance frameworks to check (GDPR,CCPA,HIPAA)'
+    required: false
+    default: 'GDPR,CCPA'
+
+  max-critical:
+    description: 'Maximum critical violations allowed before failing (default: 0 = zero tolerance)'
+    required: false
+    default: '0'
+
+  max-high:
+    description: 'Maximum high severity violations allowed (default: 3)'
+    required: false
+    default: '3'
+
+  max-medium:
+    description: 'Maximum medium severity violations allowed (default: 10)'
+    required: false
+    default: '10'
+
+  max-low:
+    description: 'Maximum low severity violations allowed (default: 999 = essentially unlimited)'
+    required: false
+    default: '999'
+
+  comment-pr:
+    description: 'Whether to post results as PR comment (true/false)'
+    required: false
+    default: 'true'
+
+outputs:
+  total-violations:
+    description: 'Total number of violations found across all severities'
+
+  critical-count:
+    description: 'Number of critical severity violations'
+
+  high-count:
+    description: 'Number of high severity violations'
+
+  medium-count:
+    description: 'Number of medium severity violations'
+
+  low-count:
+    description: 'Number of low severity violations'
+
+  passed:
+    description: 'Boolean - whether the scan passed all threshold checks'
+
+runs:
+  using: 'node20'
+  main: 'index.js'
