@@ -700,7 +700,7 @@ async function run() {
     const maxLow = parseInt(core.getInput('max-low') || '999', 10);
     const commentPR = (core.getInput('comment-pr') || 'true').toLowerCase() === 'true';
     const fullRepoScan = (core.getInput('full-repo-scan') || 'false').toLowerCase() === 'true';
-    const createIssueReport = (core.getInput('create-issue-report') || 'false').toLowerCase() === 'true';
+    const shouldCreateIssueReport = (core.getInput('create-issue-report') || 'false').toLowerCase() === 'true';
 
     // Parse frameworks into an array
     const frameworks = frameworksInput.split(',').map(f => f.trim().toUpperCase());
@@ -1019,7 +1019,7 @@ async function run() {
     // 12. CREATE GITHUB ISSUE REPORT (IF ENABLED FOR FULL SCAN)
     // ========================================================================
 
-    if (createIssueReport && fullRepoScan && counts.total > 0) {
+    if (shouldCreateIssueReport && fullRepoScan && counts.total > 0) {
       if (!octokit) {
         core.warning('⚠️ Cannot create issue report - GITHUB_TOKEN not available');
       } else {
