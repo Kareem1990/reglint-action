@@ -45,6 +45,11 @@ inputs:
     required: false
     default: 'false'
 
+  create-issue-report:
+    description: 'Create GitHub issue with full scan report (true/false)'
+    required: false
+    default: 'false'
+
 outputs:
   total-violations:
     description: 'Total number of violations found across all severities'
@@ -63,6 +68,9 @@ outputs:
 
   passed:
     description: 'Boolean - whether the scan passed all threshold checks'
+
+  issue-number:
+    description: 'GitHub issue number if issue report was created'
 
 runs:
   using: 'node20'
