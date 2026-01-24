@@ -40,6 +40,11 @@ inputs:
     required: false
     default: 'true'
 
+  full-repo-scan:
+    description: 'Scan entire repository instead of just changed files (true/false)'
+    required: false
+    default: 'false'
+
 outputs:
   total-violations:
     description: 'Total number of violations found across all severities'
