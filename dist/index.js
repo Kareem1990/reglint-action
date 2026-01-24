@@ -36603,23 +36603,57 @@ async function run() {
         .map(f => f.filename);
 
     } else if (eventName === 'push') {
-      // For push events, extract changed files from commit payloads
-      const commits = context.payload.commits || [];
-      const fileSet = new Set();
-
-      for (const commit of commits) {
-        // Collect added and modified files from each commit
-        const added = commit.added || [];
-        const modified = commit.modified || [];
-
-        for (const file of [...added, ...modified]) {
-          if (isSupportedFile(file)) {
-            fileSet.add(file);
-          }
-        }
+      // For push events, use GitHub API to get changed files
+      if (!octokit) {
+        core.setFailed('❌ GITHUB_TOKEN is required for push events');
+        return;
       }
 
-      changedFiles = Array.from(fileSet);
+      try {
+        const beforeSha = context.payload.before;
+        const afterSha = context.payload.after || context.sha;
+
+        core.info(`🔍 Comparing ${beforeSha.substring(0, 7)}...${afterSha.substring(0, 7)}`);
+
+        // Get the comparison between before and after commits
+        const comparison = await octokit.rest.repos.compareCommits({
+          owner,
+          repo,
+          base: beforeSha,
+          head: afterSha
+        });
+
+        // Extract changed files from the comparison
+        const fileSet = new Set();
+        for (const file of comparison.data.files || []) {
+          if (file.status !== 'removed' && isSupportedFile(file.filename)) {
+            fileSet.add(file.filename);
+          }
+        }
+
+        changedFiles = Array.from(fileSet);
+
+      } catch (error) {
+        // Fallback to payload commits if API fails
+        core.warning(`⚠️ Failed to fetch changed files via API: ${error.message}`);
+        core.info('📋 Falling back to commit payload...');
+        
+        const commits = context.payload.commits || [];
+        const fileSet = new Set();
+
+        for (const commit of commits) {
+          const added = commit.added || [];
+          const modified = commit.modified || [];
+
+          for (const file of [...added, ...modified]) {
+            if (isSupportedFile(file)) {
+              fileSet.add(file);
+            }
+          }
+        }
+
+        changedFiles = Array.from(fileSet);
+      }
 
     } else {
       // Unsupported event type
