@@ -18,6 +18,7 @@
 const core = require('@actions/core');
 const github = require('@actions/github');
 const fetch = require('node-fetch');
+const exec = require('@actions/exec');
 
 // ============================================================================
 // CONSTANTS
@@ -152,6 +153,72 @@ function checkThresholds(counts, thresholds) {
 }
 
 /**
+ * Gets the author information for a specific line in a file using git blame
+ * @param {string} filePath - The file path
+ * @param {number} lineNumber - The line number
+ * @returns {Promise<Object>} - Object with author name and email
+ */
+async function getAuthor(filePath, lineNumber) {
+  try {
+    let output = '';
+    let errorOutput = '';
+
+    const options = {
+      listeners: {
+        stdout: (data) => {
+          output += data.toString();
+        },
+        stderr: (data) => {
+          errorOutput += data.toString();
+        }
+      },
+      silent: true,
+      ignoreReturnCode: true
+    };
+
+    // Run git blame with --porcelain format for easier parsing
+    const exitCode = await exec.exec(
+      'git',
+      ['blame', '--porcelain', '-L', `${lineNumber},${lineNumber}`, filePath],
+      options
+    );
+
+    if (exitCode !== 0) {
+      core.debug(`git blame failed for ${filePath}:${lineNumber} - ${errorOutput}`);
+      return { author: 'Unknown', email: '' };
+    }
+
+    // Parse porcelain format output
+    // Format looks like:
+    // <sha> <line-number> <final-line-number> <num-lines>
+    // author <author-name>
+    // author-mail <<email>>
+    // ...
+    const lines = output.split('\n');
+    let author = 'Unknown';
+    let email = '';
+
+    for (const line of lines) {
+      if (line.startsWith('author ') && !line.startsWith('author-')) {
+        author = line.substring(7).trim();
+      } else if (line.startsWith('author-mail ')) {
+        // Email is in format <email@example.com>, remove the angle brackets
+        const emailMatch = line.match(/<(.+)>/);
+        if (emailMatch) {
+          email = emailMatch[1];
+        }
+      }
+    }
+
+    return { author, email };
+
+  } catch (error) {
+    core.debug(`Error getting author for ${filePath}:${lineNumber} - ${error.message}`);
+    return { author: 'Unknown', email: '' };
+  }
+}
+
+/**
  * Formats a single violation for display in the PR comment
  * @param {Object} v - The violation object
  * @returns {string} - Formatted markdown for the violation
@@ -159,6 +226,18 @@ function checkThresholds(counts, thresholds) {
 function formatViolation(v) {
   let text = `#### ${v.framework || 'Compliance'} ${v.rule || 'Violation'}\n`;
   text += `- **File:** \`${v.file}${v.line ? `:${v.line}` : ''}\`\n`;
+  
+  // Add author information if available
+  if (v.author && v.author !== 'Unknown') {
+    // Extract username from email if available, otherwise use author name
+    let username = v.author;
+    if (v.email) {
+      const emailUsername = v.email.split('@')[0];
+      username = emailUsername || v.author;
+    }
+    text += `- **Author:** @${username}\n`;
+  }
+  
   text += `- **Issue:** ${v.message || 'Compliance violation detected'}\n`;
   if (v.evidence) {
     text += `- **Evidence:** \`${v.evidence}\`\n`;
@@ -554,28 +633,46 @@ async function run() {
     }
 
     // ========================================================================
-    // 7. COUNT VIOLATIONS BY SEVERITY
+    // 7. ADD GIT BLAME AUTHOR INFORMATION TO VIOLATIONS
     // ========================================================================
 
     const violations = apiResponse.violations || [];
+    
+    core.info('👤 Adding author information to violations...');
+    
+    for (const violation of violations) {
+      if (violation.file && violation.line) {
+        const authorInfo = await getAuthor(violation.file, violation.line);
+        violation.author = authorInfo.author;
+        violation.email = authorInfo.email;
+      } else {
+        violation.author = 'Unknown';
+        violation.email = '';
+      }
+    }
+
+    // ========================================================================
+    // 8. COUNT VIOLATIONS BY SEVERITY
+    // ========================================================================
+
     const counts = countViolationsBySeverity(apiResponse);
 
     core.info(`📊 Results: Critical=${counts.critical}, High=${counts.high}, Medium=${counts.medium}, Low=${counts.low}`);
 
     // ========================================================================
-    // 8. CHECK THRESHOLDS
+    // 9. CHECK THRESHOLDS
     // ========================================================================
 
     const thresholdResult = checkThresholds(counts, thresholds);
 
     // ========================================================================
-    // 9. SET OUTPUTS
+    // 10. SET OUTPUTS
     // ========================================================================
 
     setOutputs(counts, thresholdResult.passed);
 
     // ========================================================================
-    // 10. POST PR COMMENT (IF ENABLED)
+    // 11. POST PR COMMENT (IF ENABLED)
     // ========================================================================
 
     if (commentPR && (eventName === 'pull_request' || eventName === 'pull_request_target')) {
@@ -632,7 +729,7 @@ async function run() {
     }
 
     // ========================================================================
-    // 11. PASS OR FAIL THE BUILD
+    // 12. PASS OR FAIL THE BUILD
     // ========================================================================
 
     if (thresholdResult.passed) {
