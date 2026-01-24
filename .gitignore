@@ -28,7 +28,7 @@ coverage/
 .nyc_output/
 
 # Build artifacts
-dist/
+# dist/  # Commented out - we need to commit dist for GitHub Actions
 build/
 
 # Package lock files (optional - some prefer to commit these)
