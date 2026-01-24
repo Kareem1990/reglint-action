@@ -690,36 +690,14 @@ async function run() {
               thresholdResult.exceeded
             );
 
-            // Check for existing Reglint comment to update instead of creating new
-            const existingComments = await octokit.rest.issues.listComments({
+            // Create new comment for each scan
+            await octokit.rest.issues.createComment({
               owner,
               repo,
-              issue_number: prNumber
+              issue_number: prNumber,
+              body: comment
             });
-
-            const reglintComment = existingComments.data.find(
-              c => c.body && c.body.includes('🛡️ Reglint Compliance Report')
-            );
-
-            if (reglintComment) {
-              // Update existing comment
-              await octokit.rest.issues.updateComment({
-                owner,
-                repo,
-                comment_id: reglintComment.id,
-                body: comment
-              });
-              core.info('💬 Updated existing PR comment with results');
-            } else {
-              // Create new comment
-              await octokit.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: prNumber,
-                body: comment
-              });
-              core.info('💬 Posted PR comment with results');
-            }
+            core.info('💬 Posted new PR comment with scan results');
 
           } catch (error) {
             core.warning(`⚠️ Failed to post PR comment: ${error.message}`);
