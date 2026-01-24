@@ -312,25 +312,19 @@ async function createIssueReport(octokit, owner, repo, violations, counts, autho
   const medium = violations.filter(v => (v.severity || '').toLowerCase() === 'medium');
   const low = violations.filter(v => (v.severity || '').toLowerCase() === 'low');
   
-  // Critical Issues
+  // Critical Issues (show all)
   if (critical.length > 0) {
     issueBody += `## 🔴 Critical Issues (${critical.length})\n\n`;
-    for (const v of critical.slice(0, 10)) { // Limit to 10 to avoid huge issues
+    for (const v of critical) { // Show all critical issues
       issueBody += formatViolation(v);
-    }
-    if (critical.length > 10) {
-      issueBody += `\n_... and ${critical.length - 10} more critical issues. See workflow logs for full details._\n\n`;
     }
   }
   
-  // High Issues (collapsed)
+  // High Issues (show all in collapsed section)
   if (high.length > 0) {
     issueBody += `<details>\n<summary>🟠 High Priority Issues (${high.length})</summary>\n\n`;
-    for (const v of high.slice(0, 5)) {
+    for (const v of high) { // Show all high issues
       issueBody += formatViolation(v);
-    }
-    if (high.length > 5) {
-      issueBody += `\n_... and ${high.length - 5} more high priority issues._\n`;
     }
     issueBody += `\n</details>\n\n`;
   }
