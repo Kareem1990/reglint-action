@@ -35970,6 +35970,151 @@ function checkThresholds(counts, thresholds) {
 }
 
 /**
+ * Gets all files from the repository recursively
+ * @param {Object} octokit - GitHub API client
+ * @param {string} owner - Repository owner
+ * @param {string} repo - Repository name
+ * @param {string} ref - Git reference (branch/commit SHA)
+ * @returns {Promise<Array>} - Array of file paths
+ */
+async function getAllRepoFiles(octokit, owner, repo, ref) {
+  const allFiles = [];
+  
+  async function getTreeRecursive(treeSha) {
+    const { data } = await octokit.rest.git.getTree({
+      owner,
+      repo,
+      tree_sha: treeSha,
+      recursive: 'true'
+    });
+    
+    for (const item of data.tree) {
+      if (item.type === 'blob' && isSupportedFile(item.path)) {
+        allFiles.push(item.path);
+      }
+    }
+  }
+  
+  // Get the commit to find the tree SHA
+  const { data: commit } = await octokit.rest.git.getCommit({
+    owner,
+    repo,
+    commit_sha: ref
+  });
+  
+  await getTreeRecursive(commit.tree.sha);
+  
+  return allFiles;
+}
+
+/**
+ * Scans files in batches to avoid Lambda timeout
+ * @param {Array} files - Array of file objects with path, content, language
+ * @param {Array} frameworks - Compliance frameworks to check
+ * @param {string} apiKey - API key for authentication
+ * @returns {Promise<Object>} - Combined violations from all batches
+ */
+async function scanFilesInBatches(files, frameworks, apiKey) {
+  const BATCH_SIZE = 10;
+  const batches = [];
+  
+  // Create batches
+  for (let i = 0; i < files.length; i += BATCH_SIZE) {
+    batches.push(files.slice(i, i + BATCH_SIZE));
+  }
+  
+  core.info(`📦 Split ${files.length} files into ${batches.length} batches`);
+  
+  const allViolations = [];
+  let successCount = 0;
+  let failCount = 0;
+  
+  // Scan each batch
+  for (let i = 0; i < batches.length; i++) {
+    try {
+      core.info(`📤 Scanning batch ${i + 1}/${batches.length} (${batches[i].length} files)...`);
+      
+      const response = await fetch(REGLINT_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          files: batches[i],
+          frameworks: frameworks
+        }),
+        timeout: 120000
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Status ${response.status}: ${errorText}`);
+      }
+      
+      const result = await response.json();
+      allViolations.push(...(result.violations || []));
+      successCount++;
+      
+      core.info(`✅ Batch ${i + 1} completed: ${result.violations?.length || 0} violations found`);
+      
+    } catch (error) {
+      core.warning(`⚠️ Batch ${i + 1} failed: ${error.message}`);
+      failCount++;
+    }
+  }
+  
+  core.info(`📊 Scan completed: ${successCount}/${batches.length} batches succeeded`);
+  
+  return {
+    violations: allViolations,
+    summary: {
+      total_violations: allViolations.length,
+      critical: allViolations.filter(v => (v.severity || '').toLowerCase() === 'critical').length,
+      high: allViolations.filter(v => (v.severity || '').toLowerCase() === 'high').length,
+      medium: allViolations.filter(v => (v.severity || '').toLowerCase() === 'medium').length,
+      low: allViolations.filter(v => (v.severity || '').toLowerCase() === 'low').length
+    }
+  };
+}
+
+/**
+ * Groups violations by author and counts them by severity
+ * @param {Array} violations - Array of violation objects with author info
+ * @returns {Object} - Object with author statistics
+ */
+function groupViolationsByAuthor(violations) {
+  const authorStats = {};
+  
+  for (const violation of violations) {
+    const author = violation.author || 'Unknown';
+    
+    if (!authorStats[author]) {
+      authorStats[author] = {
+        name: author,
+        email: violation.email || '',
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+        total: 0
+      };
+    }
+    
+    const severity = (violation.severity || 'low').toLowerCase();
+    if (severity === 'critical') authorStats[author].critical++;
+    else if (severity === 'high') authorStats[author].high++;
+    else if (severity === 'medium') authorStats[author].medium++;
+    else authorStats[author].low++;
+    
+    authorStats[author].total++;
+  }
+  
+  // Convert to array and sort by total violations (descending)
+  return Object.values(authorStats).sort((a, b) => b.total - a.total);
+}
+
+/**
  * Gets the author information for a specific line in a file using git blame
  * @param {string} filePath - The file path
  * @param {number} lineNumber - The line number
@@ -36073,13 +36218,15 @@ function formatViolation(v) {
  * @param {Object} counts - The violation counts by severity
  * @param {boolean} passed - Whether the scan passed threshold checks
  * @param {Array} exceededThresholds - List of exceeded thresholds
+ * @param {boolean} isFullScan - Whether this is a full repository scan
  * @returns {string} - Formatted markdown comment
  */
-function formatPRComment(violations, counts, passed, exceededThresholds) {
+function formatPRComment(violations, counts, passed, exceededThresholds, isFullScan = false) {
   const statusIcon = passed ? '✅' : '❌';
   const statusText = passed ? 'PASSED' : 'FAILED';
+  const scanType = isFullScan ? 'Full Repository Scan' : 'Compliance Report';
 
-  let comment = `## 🛡️ Reglint Compliance Report - ${statusIcon} ${statusText}\n\n`;
+  let comment = `## 🛡️ Reglint ${scanType} - ${statusIcon} ${statusText}\n\n`;
 
   // Handle zero violations case specially
   if (counts.total === 0) {
@@ -36097,8 +36244,26 @@ function formatPRComment(violations, counts, passed, exceededThresholds) {
     return comment;
   }
 
+  // If full scan, show author summary first
+  if (isFullScan && violations.length > 0) {
+    const authorStats = groupViolationsByAuthor(violations);
+    
+    comment += `### 👥 Violations by Author\n\n`;
+    comment += `| Author | Critical | High | Medium | Low | Total |\n`;
+    comment += `|--------|----------|------|--------|-----|-------|\n`;
+    
+    for (const author of authorStats) {
+      const displayName = author.name === 'Unknown' ? 'Unknown' : author.name;
+      comment += `| ${displayName} | ${author.critical} | ${author.high} | ${author.medium} | ${author.low} | **${author.total}** |\n`;
+    }
+    
+    // Add totals row
+    comment += `| **Total** | **${counts.critical}** | **${counts.high}** | **${counts.medium}** | **${counts.low}** | **${counts.total}** |\n\n`;
+    comment += `---\n\n`;
+  }
+
   // 1. Summary table (always visible)
-  comment += `### 📊 Summary\n\n`;
+  comment += `### 📊 Overall Summary\n\n`;
   comment += `| Severity | Count |\n`;
   comment += `|----------|-------|\n`;
   comment += `| 🔴 Critical | ${counts.critical} |\n`;
@@ -36237,12 +36402,18 @@ async function run() {
     const maxMedium = parseInt(core.getInput('max-medium') || '10', 10);
     const maxLow = parseInt(core.getInput('max-low') || '999', 10);
     const commentPR = (core.getInput('comment-pr') || 'true').toLowerCase() === 'true';
+    const fullRepoScan = (core.getInput('full-repo-scan') || 'false').toLowerCase() === 'true';
 
     // Parse frameworks into an array
     const frameworks = frameworksInput.split(',').map(f => f.trim().toUpperCase());
 
     core.info(`📋 Scanning for: ${frameworks.join(', ')}`);
     core.info(`📏 Thresholds - Critical: ${maxCritical}, High: ${maxHigh}, Medium: ${maxMedium}, Low: ${maxLow}`);
+    if (fullRepoScan) {
+      core.info(`🔍 Mode: Full Repository Scan`);
+    } else {
+      core.info(`🔍 Mode: Changed Files Only`);
+    }
 
     const thresholds = { maxCritical, maxHigh, maxMedium, maxLow };
 
@@ -36269,7 +36440,25 @@ async function run() {
 
     core.info(`📌 Event type: ${eventName}`);
 
-    if (eventName === 'pull_request' || eventName === 'pull_request_target') {
+    // Check if full repo scan is requested
+    if (fullRepoScan) {
+      core.info(`🔍 Fetching all files from repository...`);
+      
+      if (!octokit) {
+        core.setFailed('❌ GITHUB_TOKEN is required for full repository scan');
+        return;
+      }
+
+      try {
+        const ref = context.sha;
+        changedFiles = await getAllRepoFiles(octokit, owner, repo, ref);
+        core.info(`📁 Found ${changedFiles.length} code files in repository`);
+      } catch (error) {
+        core.setFailed(`❌ Failed to fetch repository files: ${error.message}`);
+        return;
+      }
+
+    } else if (eventName === 'pull_request' || eventName === 'pull_request_target') {
       // For pull request events, use the pulls API to get changed files
       if (!octokit) {
         core.setFailed('❌ GITHUB_TOKEN is required for pull_request events');
@@ -36403,42 +36592,46 @@ async function run() {
     }
 
     // ========================================================================
-    // 6. CALL REGLINT LAMBDA API
+    // 6. CALL REGLINT LAMBDA API (WITH BATCHING FOR LARGE SCANS)
     // ========================================================================
 
     core.info('🚀 Analyzing with Reglint AI...');
 
-    const requestBody = {
-      files: filesToAnalyze,
-      frameworks
-    };
-
     let apiResponse;
     try {
-      const response = await fetch(REGLINT_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify(requestBody),
-        timeout: 120000 // 2 minute timeout
-      });
+      // Use batching if we have many files (full repo scan) or just send directly
+      if (filesToAnalyze.length > 10) {
+        apiResponse = await scanFilesInBatches(filesToAnalyze, frameworks, apiKey);
+      } else {
+        // For small number of files, send in one request
+        const response = await fetch(REGLINT_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            files: filesToAnalyze,
+            frameworks
+          }),
+          timeout: 120000 // 2 minute timeout
+        });
 
-      // Check for authentication errors
-      if (response.status === 401 || response.status === 403) {
-        core.setFailed('❌ Authentication failed - please check your API key');
-        return;
+        // Check for authentication errors
+        if (response.status === 401 || response.status === 403) {
+          core.setFailed('❌ Authentication failed - please check your API key');
+          return;
+        }
+
+        // Check for other HTTP errors
+        if (!response.ok) {
+          const errorText = await response.text();
+          core.setFailed(`❌ API request failed with status ${response.status}: ${errorText}`);
+          return;
+        }
+
+        apiResponse = await response.json();
       }
-
-      // Check for other HTTP errors
-      if (!response.ok) {
-        const errorText = await response.text();
-        core.setFailed(`❌ API request failed with status ${response.status}: ${errorText}`);
-        return;
-      }
-
-      apiResponse = await response.json();
 
     } catch (error) {
       if (error.type === 'request-timeout' || error.code === 'ETIMEDOUT') {
@@ -36504,7 +36697,8 @@ async function run() {
               violations,
               counts,
               thresholdResult.passed,
-              thresholdResult.exceeded
+              thresholdResult.exceeded,
+              fullRepoScan
             );
 
             // Create new comment for each scan
