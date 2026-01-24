@@ -36146,26 +36146,20 @@ async function createIssueReport(octokit, owner, repo, violations, counts, autho
     issueBody += `\n</details>\n\n`;
   }
   
-  // Medium Issues (collapsed)
+  // Medium Issues (show all in collapsed section)
   if (medium.length > 0) {
     issueBody += `<details>\n<summary>🟡 Medium Priority Issues (${medium.length})</summary>\n\n`;
-    for (const v of medium.slice(0, 5)) {
+    for (const v of medium) { // Show all medium issues
       issueBody += formatViolation(v);
-    }
-    if (medium.length > 5) {
-      issueBody += `\n_... and ${medium.length - 5} more medium priority issues._\n`;
     }
     issueBody += `\n</details>\n\n`;
   }
   
-  // Low Issues (collapsed)
+  // Low Issues (show all in collapsed section)
   if (low.length > 0) {
     issueBody += `<details>\n<summary>🟢 Low Priority Issues (${low.length})</summary>\n\n`;
-    for (const v of low.slice(0, 5)) {
+    for (const v of low) { // Show all low issues
       issueBody += formatViolation(v);
-    }
-    if (low.length > 5) {
-      issueBody += `\n_... and ${low.length - 5} more low priority issues._\n`;
     }
     issueBody += `\n</details>\n\n`;
   }
@@ -36395,41 +36389,29 @@ function formatPRComment(violations, counts, passed, exceededThresholds, isFullS
     }
   }
 
-  // 3. High issues (collapsible)
+  // 3. High issues (collapsible - show all)
   if (high.length > 0) {
     comment += `<details>\n<summary>📋 View all ${high.length} high priority issue${high.length > 1 ? 's' : ''}</summary>\n\n`;
-    const displayHigh = high.slice(0, 5);
-    for (const v of displayHigh) {
+    for (const v of high) { // Show all high issues
       comment += formatViolation(v);
-    }
-    if (high.length > 5) {
-      comment += `_... and ${high.length - 5} more high priority issues_\n`;
     }
     comment += `\n</details>\n\n`;
   }
 
-  // 4. Medium issues (collapsible)
+  // 4. Medium issues (collapsible - show all)
   if (medium.length > 0) {
     comment += `<details>\n<summary>🟡 View all ${medium.length} medium priority issue${medium.length > 1 ? 's' : ''}</summary>\n\n`;
-    const displayMedium = medium.slice(0, 5);
-    for (const v of displayMedium) {
+    for (const v of medium) { // Show all medium issues
       comment += formatViolation(v);
-    }
-    if (medium.length > 5) {
-      comment += `_... and ${medium.length - 5} more medium priority issues_\n`;
     }
     comment += `\n</details>\n\n`;
   }
 
-  // 5. Low issues (collapsible)
+  // 5. Low issues (collapsible - show all)
   if (low.length > 0) {
     comment += `<details>\n<summary>🟢 View ${low.length} low priority issue${low.length > 1 ? 's' : ''}</summary>\n\n`;
-    const displayLow = low.slice(0, 5);
-    for (const v of displayLow) {
+    for (const v of low) { // Show all low issues
       comment += formatViolation(v);
-    }
-    if (low.length > 5) {
-      comment += `_... and ${low.length - 5} more low priority issues_\n`;
     }
     comment += `\n</details>\n\n`;
   }
