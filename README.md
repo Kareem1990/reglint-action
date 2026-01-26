@@ -8,7 +8,13 @@ Get started in 3 simple steps:
 
 ### 1. Get Your API Key
 
-Sign up at [reglint.com](https://reglint.com) to get your API key.
+**Beta Access:**
+
+Reglint is in private beta. To get an API key:
+
+**Contact:** kareem@reglint.com  
+**Include:** Your GitHub username and repository name  
+**Response:** API key within 24 hours
 
 ### 2. Add the Secret
 
@@ -34,7 +40,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Reglint Compliance Check
-        uses: YOUR_USERNAME/reglint-action@v1
+        uses: Kareem1990/reglint-action@main
         with:
           api-key: ${{ secrets.REGLINT_API_KEY }}
         env:
@@ -42,6 +48,32 @@ jobs:
 ```
 
 That's it! Reglint will now scan your pull requests for compliance violations.
+
+---
+
+## Scan Modes
+
+### Automatic Scan (Pull Requests)
+
+When triggered by `pull_request` events, Reglint scans only the files changed in the PR.
+
+```yaml
+on:
+  pull_request:  # Scans changed files only
+```
+
+### Full Repository Scan (Manual)
+
+Use `workflow_dispatch` to scan all files in your repository.
+
+```yaml
+on:
+  workflow_dispatch:  # Scans all files
+```
+
+**Recommendation:**
+- Use automatic scans for PR checks (fast)
+- Use full scans weekly/monthly for comprehensive audits
 
 ---
 
@@ -75,7 +107,7 @@ That's it! Reglint will now scan your pull requests for compliance violations.
 ```yaml
 - name: Reglint Compliance Check
   id: reglint
-  uses: YOUR_USERNAME/reglint-action@v1
+  uses: Kareem1990/reglint-action@main
   with:
     api-key: ${{ secrets.REGLINT_API_KEY }}
   env:
@@ -120,7 +152,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Reglint Compliance Check
-        uses: YOUR_USERNAME/reglint-action@v1
+        uses: Kareem1990/reglint-action@main
         with:
           api-key: ${{ secrets.REGLINT_API_KEY }}
           frameworks: 'GDPR,CCPA,HIPAA'
@@ -149,7 +181,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Reglint Compliance Check
-        uses: YOUR_USERNAME/reglint-action@v1
+        uses: Kareem1990/reglint-action@main
         with:
           api-key: ${{ secrets.REGLINT_API_KEY }}
           frameworks: 'GDPR,CCPA'
@@ -178,7 +210,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Reglint Compliance Check
-        uses: YOUR_USERNAME/reglint-action@v1
+        uses: Kareem1990/reglint-action@main
         with:
           api-key: ${{ secrets.REGLINT_API_KEY }}
           frameworks: 'GDPR'
@@ -209,7 +241,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Reglint HIPAA Check
-        uses: YOUR_USERNAME/reglint-action@v1
+        uses: Kareem1990/reglint-action@main
         with:
           api-key: ${{ secrets.REGLINT_API_KEY }}
           frameworks: 'HIPAA'
@@ -237,7 +269,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Reglint Compliance Check
-        uses: YOUR_USERNAME/reglint-action@v1
+        uses: Kareem1990/reglint-action@main
         with:
           api-key: ${{ secrets.REGLINT_API_KEY }}
           comment-pr: 'false'  # No PR to comment on
@@ -264,7 +296,7 @@ jobs:
 
       - name: Reglint Compliance Check
         id: reglint
-        uses: YOUR_USERNAME/reglint-action@v1
+        uses: Kareem1990/reglint-action@main
         with:
           api-key: ${{ secrets.REGLINT_API_KEY }}
           max-critical: 999  # Don't fail, we'll handle manually
@@ -283,6 +315,40 @@ jobs:
         if: steps.reglint.outputs.critical-count != '0'
         run: exit 1
 ```
+
+### Example 7: Full Repository Scan (Manual Trigger)
+
+Scan all files in your repository on-demand. Useful for periodic compliance audits.
+
+```yaml
+name: Full Compliance Audit
+
+on:
+  workflow_dispatch:  # Manual trigger from GitHub Actions tab
+
+jobs:
+  full-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full repository
+
+      - name: Reglint Full Repository Scan
+        uses: Kareem1990/reglint-action@main
+        with:
+          api-key: ${{ secrets.REGLINT_API_KEY }}
+          frameworks: 'GDPR,CCPA,HIPAA'
+          max-critical: 0
+          max-high: 0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+**To run manually:**
+1. Go to **Actions** tab in your repository
+2. Select "Full Compliance Audit"
+3. Click **Run workflow** button
 
 ---
 
@@ -366,11 +432,13 @@ jobs:
 
 ### Getting Your API Key
 
-1. Visit [reglint.com](https://reglint.com)
-2. Sign up for an account
-3. Navigate to **Settings > API Keys**
-4. Click **Generate New Key**
-5. Copy the key (it won't be shown again)
+**Beta Access:**
+
+Reglint is in private beta. To get an API key:
+
+**Contact:** kareem@reglint.com  
+**Include:** Your GitHub username and repository name  
+**Response:** API key within 24 hours
 
 ### Storing the API Key Securely
 
