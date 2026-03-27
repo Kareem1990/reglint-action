@@ -8,13 +8,9 @@ Get started in 3 simple steps:
 
 ### 1. Get Your API Key
 
-**Beta Access:**
+Visit **[https://reglint.ai](https://reglint.ai)** and sign up for an account.
 
-Reglint is in private beta. To get an API key:
-
-**Contact:** kareem@reglint.com  
-**Include:** Your GitHub username and repository name  
-**Response:** API key within 24 hours
+Once logged in, go to **Settings → API Keys → Generate New Key** to create your API key.
 
 ### 2. Add the Secret
 
@@ -40,9 +36,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Reglint Compliance Check
-        uses: Kareem1990/reglint-action@main
+        uses: Kareem1990/reglint-action@v1
         with:
           api-key: ${{ secrets.REGLINT_API_KEY }}
+          frameworks: 'GDPR,HIPAA,CCPA'
+          mode: 'full'
+          industry: 'general'
+          max-critical: 0
+          max-high: 3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -432,13 +433,10 @@ jobs:
 
 ### Getting Your API Key
 
-**Beta Access:**
-
-Reglint is in private beta. To get an API key:
-
-**Contact:** kareem@reglint.com  
-**Include:** Your GitHub username and repository name  
-**Response:** API key within 24 hours
+1. Visit **[https://reglint.ai](https://reglint.ai)** and create an account
+2. Subscribe to a plan (Starter or Professional) at **Settings → Billing**
+3. Go to **Settings → API Keys → Generate New Key**
+4. Copy the key — it is shown only once
 
 ### Storing the API Key Securely
 

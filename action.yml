@@ -35,6 +35,16 @@ inputs:
     required: false
     default: '999'
 
+  mode:
+    description: 'Analysis mode: fast (rules only) or full (rules + RAG + Claude)'
+    required: false
+    default: 'full'
+
+  industry:
+    description: 'Industry context: general, healthcare, fintech, hr'
+    required: false
+    default: 'general'
+
   comment-pr:
     description: 'Whether to post results as PR comment (true/false)'
     required: false

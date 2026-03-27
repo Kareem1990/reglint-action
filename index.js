@@ -24,8 +24,8 @@ const exec = require('@actions/exec');
 // CONSTANTS
 // ============================================================================
 
-// Reglint Lambda API endpoint for compliance analysis
-const REGLINT_API_URL = 'https://jjeu54sgnro4odqvth5yhkahki0cfwpt.lambda-url.us-east-1.on.aws/';
+// Reglint Backend API endpoint for compliance analysis
+const REGLINT_API_URL = 'https://reglint.ai/api/code/analyze-stream';
 
 // Supported code file extensions for scanning
 const SUPPORTED_EXTENSIONS = [
@@ -191,66 +191,83 @@ async function getAllRepoFiles(octokit, owner, repo, ref) {
 }
 
 /**
- * Scans files in batches to avoid Lambda timeout
+ * Scans files one-by-one against the Reglint backend API
  * @param {Array} files - Array of file objects with path, content, language
  * @param {Array} frameworks - Compliance frameworks to check
- * @param {string} apiKey - API key for authentication
- * @returns {Promise<Object>} - Combined violations from all batches
+ * @param {string} apiKey - Reglint API key for authentication
+ * @param {string} mode - 'fast' (rules only) or 'full' (rules + RAG + Claude)
+ * @param {string} industry - Industry context: general, healthcare, fintech, hr
+ * @returns {Promise<Object|null>} - Combined violations, or null if a fatal auth/limit error occurred
  */
-async function scanFilesInBatches(files, frameworks, apiKey) {
-  const BATCH_SIZE = 10;
-  const batches = [];
-  
-  // Create batches
-  for (let i = 0; i < files.length; i += BATCH_SIZE) {
-    batches.push(files.slice(i, i + BATCH_SIZE));
-  }
-  
-  core.info(`📦 Split ${files.length} files into ${batches.length} batches`);
-  
+async function scanFilesInBatches(files, frameworks, apiKey, mode, industry) {
   const allViolations = [];
   let successCount = 0;
   let failCount = 0;
-  
-  // Scan each batch
-  for (let i = 0; i < batches.length; i++) {
+  let lastScansRemaining = null;
+
+  core.info(`📦 Scanning ${files.length} file(s) with mode="${mode}" industry="${industry}"`);
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
     try {
-      core.info(`📤 Scanning batch ${i + 1}/${batches.length} (${batches[i].length} files)...`);
-      
+      core.info(`📤 Scanning file ${i + 1}/${files.length}: ${file.path}...`);
+
       const response = await fetch(REGLINT_API_URL, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          files: batches[i],
-          frameworks: frameworks
+          code: file.content,
+          filename: file.path,
+          language: file.language,
+          mode,
+          industry
         }),
         timeout: 120000
       });
-      
+
+      if (response.status === 401) {
+        core.setFailed('Authentication failed: Invalid API key. Get your key at reglint.ai/settings/api-keys');
+        return null;
+      }
+      if (response.status === 403) {
+        core.setFailed('Access denied: Subscription required. Visit reglint.ai/settings/billing to subscribe.');
+        return null;
+      }
+      if (response.status === 429) {
+        core.setFailed('Monthly scan limit reached. Please upgrade your plan at reglint.ai/settings/billing');
+        return null;
+      }
+      if (response.status === 503) {
+        core.setFailed('Reglint service temporarily unavailable. Please try again.');
+        return null;
+      }
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Status ${response.status}: ${errorText}`);
       }
-      
+
       const result = await response.json();
       allViolations.push(...(result.violations || []));
+      if (result.scansRemaining !== undefined) lastScansRemaining = result.scansRemaining;
       successCount++;
-      
-      core.info(`✅ Batch ${i + 1} completed: ${result.violations?.length || 0} violations found`);
-      
+
+      core.info(`✅ File ${i + 1} scanned: ${(result.violations || []).length} violations found`);
+
     } catch (error) {
-      core.warning(`⚠️ Batch ${i + 1} failed: ${error.message}`);
+      core.warning(`⚠️ File ${i + 1} (${file.path}) failed: ${error.message}`);
       failCount++;
     }
   }
-  
-  core.info(`📊 Scan completed: ${successCount}/${batches.length} batches succeeded`);
-  
+
+  core.info(`📊 Scan completed: ${successCount}/${files.length} files succeeded`);
+
   return {
     violations: allViolations,
+    scansRemaining: lastScansRemaining,
     summary: {
       total_violations: allViolations.length,
       critical: allViolations.filter(v => (v.severity || '').toLowerCase() === 'critical').length,
@@ -677,16 +694,19 @@ async function run() {
     const commentPR = (core.getInput('comment-pr') || 'true').toLowerCase() === 'true';
     const fullRepoScan = (core.getInput('full-repo-scan') || 'false').toLowerCase() === 'true';
     const shouldCreateIssueReport = (core.getInput('create-issue-report') || 'false').toLowerCase() === 'true';
+    const mode = core.getInput('mode') || 'full';
+    const industry = core.getInput('industry') || 'general';
 
     // Parse frameworks into an array
     const frameworks = frameworksInput.split(',').map(f => f.trim().toUpperCase());
 
     core.info(`📋 Scanning for: ${frameworks.join(', ')}`);
     core.info(`📏 Thresholds - Critical: ${maxCritical}, High: ${maxHigh}, Medium: ${maxMedium}, Low: ${maxLow}`);
+    core.info(`⚙️  Analysis mode: ${mode} | Industry: ${industry}`);
     if (fullRepoScan) {
-      core.info(`🔍 Mode: Full Repository Scan`);
+      core.info(`🔍 Scope: Full Repository Scan`);
     } else {
-      core.info(`🔍 Mode: Changed Files Only`);
+      core.info(`🔍 Scope: Changed Files Only`);
     }
 
     const thresholds = { maxCritical, maxHigh, maxMedium, maxLow };
@@ -907,39 +927,11 @@ async function run() {
 
     let apiResponse;
     try {
-      // Use batching if we have many files (full repo scan) or just send directly
-      if (filesToAnalyze.length > 10) {
-        apiResponse = await scanFilesInBatches(filesToAnalyze, frameworks, apiKey);
-      } else {
-        // For small number of files, send in one request
-        const response = await fetch(REGLINT_API_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            files: filesToAnalyze,
-            frameworks
-          }),
-          timeout: 120000 // 2 minute timeout
-        });
+      // Scan all files individually against the Reglint backend API
+      apiResponse = await scanFilesInBatches(filesToAnalyze, frameworks, apiKey, mode, industry);
 
-        // Check for authentication errors
-        if (response.status === 401 || response.status === 403) {
-          core.setFailed('❌ Authentication failed - please check your API key');
-          return;
-        }
-
-        // Check for other HTTP errors
-        if (!response.ok) {
-          const errorText = await response.text();
-          core.setFailed(`❌ API request failed with status ${response.status}: ${errorText}`);
-          return;
-        }
-
-        apiResponse = await response.json();
-      }
+      // null means a fatal error was already reported via core.setFailed inside scanFilesInBatches
+      if (apiResponse === null) return;
 
     } catch (error) {
       if (error.type === 'request-timeout' || error.code === 'ETIMEDOUT') {
@@ -976,6 +968,7 @@ async function run() {
     const counts = countViolationsBySeverity(apiResponse);
 
     core.info(`📊 Results: Critical=${counts.critical}, High=${counts.high}, Medium=${counts.medium}, Low=${counts.low}`);
+    core.info(`✅ Scan complete. Scans remaining this month: ${apiResponse.scansRemaining ?? 'unlimited'}`);
 
     // ========================================================================
     // 9. CHECK THRESHOLDS
